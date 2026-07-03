@@ -767,7 +767,6 @@ _INAPPROPRIATE_TOKENS_RAW: frozenset[str] = frozenset(
         "retarded",
         "tard",
         "pathetic",
-        "useless",
         "worthless",
         "simp",
         "cuck",
@@ -1035,10 +1034,10 @@ _LANG_TEMPLATES = {
 
 def get_template_message(template_name: str, language: Optional[str] = "en", **kwargs) -> str:
     lang = (language or "en").strip().lower()
-    if lang not in ("roman_urdu", "mixed"):
-        lang = "en"
-    else:
+    if lang in ("roman_urdu", "mixed", "ur", "urdu"):
         lang = "roman_urdu"
+    else:
+        lang = "en"
     tpl = _LANG_TEMPLATES[lang].get(template_name, _LANG_TEMPLATES["en"][template_name])
     return tpl.format(**kwargs)
 
@@ -1083,10 +1082,10 @@ _ACTIVE_PHRASES = {
 
 def get_active_invite_phrase(category: str, name: str, language: Optional[str] = "en") -> str:
     lang = (language or "en").strip().lower()
-    if lang not in ("roman_urdu", "mixed"):
-        lang = "en"
-    else:
+    if lang in ("roman_urdu", "mixed", "ur", "urdu"):
         lang = "roman_urdu"
+    else:
+        lang = "en"
     phrases = _ACTIVE_PHRASES[lang].get(category, _ACTIVE_PHRASES["en"][category])
     return random.choice(phrases).format(name=name)
 

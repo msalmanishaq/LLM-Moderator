@@ -1444,9 +1444,11 @@ def start_research_timer(room_id: str):
         room = get_room(room_id)
         if room and room.get("status") == "active":
             logger.info("⏰ Room %s…: sending 6-min warning", rid)
-            reminder = (
-                "⏰ **6 minutes remaining!** Keep working toward **one agreed ranking of all 12 items**."
-            )
+            lang = get_room_primary_language(room_id)
+            if lang in ("roman_urdu", "ur", "mixed"):
+                reminder = "⏰ **6 minute baaqi hain!** 12 items ki ek mutfiq final ranking par kaam jaari rakhein."
+            else:
+                reminder = "⏰ **6 minutes remaining!** Keep working toward **one agreed ranking of all 12 items**."
             add_message(room_id, "Moderator", reminder, "system")
             socketio.emit(
                 "receive_message",
@@ -1459,10 +1461,13 @@ def start_research_timer(room_id: str):
         room = get_room(room_id)
         if room and room.get("status") == "active":
             logger.info("⏰ Room %s…: 2-min milestone", rid)
-            urgent = (
-                "⚠️ **2 minutes remaining!** I'm **inferring a ranking from your chat**—use lines like "
-                "**`1. item`** … **`12. item`** with the official names when you can."
-            )
+            lang = get_room_primary_language(room_id)
+            if lang in ("roman_urdu", "ur", "mixed"):
+                urgent = "⚠️ **2 minute baaqi hain!** Baraye meharbani apni final ranking (1 se 12) jald mukammal karein."
+                ok = "📋 **Aap ki discussion se final ranking tay kar li gayi hai.** Session yahan khatam hota hai—shukriya."
+            else:
+                urgent = "⚠️ **2 minutes remaining!** I'm **inferring a ranking from your chat**—use lines like **`1. item`** … **`12. item`** with the official names when you can."
+                ok = "📋 **Final ranking inferred from your discussion.** Ending the session now—thank you."
             add_message(room_id, "Moderator", urgent, "system")
             socketio.emit(
                 "receive_message",
@@ -1471,10 +1476,6 @@ def start_research_timer(room_id: str):
             )
             strict = extract_ranking_strict_from_chat(room_id)
             if strict and save_auto_ranking(room_id, strict, "timer_2min_strict"):
-                ok = (
-                    "📋 **Final ranking inferred from your discussion.** Ending the session now—"
-                    "thank you."
-                )
                 add_message(room_id, "Moderator", ok, "system")
                 socketio.emit(
                     "receive_message",

@@ -10,7 +10,7 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from transcription_validator import is_valid_transcript, calculate_transcript_confidence
+from transcription_validator import is_valid_transcript, calculate_transcript_confidence, correct_phonetic_hallucinations
 
 
 class TestTranscriptionValidator(unittest.TestCase):
@@ -43,6 +43,12 @@ class TestTranscriptionValidator(unittest.TestCase):
     def test_confidence_calculation(self):
         conf = calculate_transcript_confidence("um ah", {"confidence": 0.95})
         self.assertLess(conf, 0.70)
+
+    def test_phonetic_corrections(self):
+        self.assertEqual(correct_phonetic_hallucinations("number one piano jo hai"), "number one water jo hai")
+        self.assertEqual(correct_phonetic_hallucinations("Peerasho number do pe aana chahiye"), "parachute number do pe aana chahiye")
+        self.assertEqual(correct_phonetic_hallucinations("main doosri tatti jo hai woh lighter pe doonga"), "main doosri priority jo hai woh lighter pe doonga")
+        self.assertEqual(correct_phonetic_hallucinations("number aik pushch city"), "number aik flashlight")
 
 
 if __name__ == "__main__":

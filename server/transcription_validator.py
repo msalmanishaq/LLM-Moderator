@@ -19,6 +19,28 @@ FILLER_WORDS = {
 REPETITION_REGEX = re.compile(r"(\b\w+\b)(?:\s+\1){3,}", re.IGNORECASE)
 CHAR_REPETITION_REGEX = re.compile(r"(.)\1{4,}", re.IGNORECASE)
 
+# Common ASR phonetic distortions mapped to domain terms
+PHONETIC_REPLACEMENTS = [
+    (re.compile(r"\bnumber\s+one\s+piano\b", re.IGNORECASE), "number one water"),
+    (re.compile(r"\bpiano\b", re.IGNORECASE), "water"),
+    (re.compile(r"\bpeerasho\b|\bparasheet\b", re.IGNORECASE), "parachute"),
+    (re.compile(r"\bdoosri\s+tatti\b|\bdoosri\s+tati\b", re.IGNORECASE), "doosri priority"),
+    (re.compile(r"\bpushch\s+city\b", re.IGNORECASE), "flashlight"),
+    (re.compile(r"\bemergency\s+time\s+callana\b", re.IGNORECASE), "emergency reflector"),
+    (re.compile(r"\bnumber\s+pandrah\b", re.IGNORECASE), "number 12"),
+    (re.compile(r"\btopographic\s+snap\s+origin\b", re.IGNORECASE), "topographic map of region"),
+]
+
+
+def correct_phonetic_hallucinations(text: str) -> str:
+    """Corrects common ASR phonetic mis-transcriptions for domain items."""
+    if not text:
+        return text
+    result = text
+    for pattern, replacement in PHONETIC_REPLACEMENTS:
+        result = pattern.sub(replacement, result)
+    return result
+
 
 def is_valid_transcript(text: str) -> Tuple[bool, str]:
     """
