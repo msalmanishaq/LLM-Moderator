@@ -4309,8 +4309,11 @@ def stt():
         _norm_ms = int((time.time() - _t_norm) * 1000)
         normalized = result["normalized_text"]
 
-        # Validate transcript integrity & calculate effective confidence
-        from transcription_validator import calculate_transcript_confidence
+        # Validate transcript integrity & semantic content
+        from transcription_validator import calculate_transcript_confidence, process_stt_output
+        from semantic_validator import validate_semantic_content, get_validation_response
+
+        semantic_res = validate_semantic_content(normalized)
         effective_confidence = calculate_transcript_confidence(raw_text, result)
         
         stt_threshold = float(os.getenv("STT_CONFIDENCE_THRESHOLD", "0.7"))
@@ -4321,8 +4324,15 @@ def stt():
         retry_key = f"{room_id}:{user_name}" if room_id else audio_token
         
         current_retries = _stt_retry_tracker.get(retry_key, 0)
-        is_low_conf = effective_confidence < stt_threshold
-        should_retry = is_low_conf and current_retries < max_retries
+        
+        # Semantic Override: If message is semantically valid (rank + item OR guidance), NEVER reject!
+        if semantic_res["valid"]:
+            is_low_conf = False
+            should_retry = False
+            logger.info("✅ Semantic Validation Passed! Overriding acoustic confidence check.")
+        else:
+            is_low_conf = effective_confidence < stt_threshold
+            should_retry = is_low_conf and current_retries < max_retries
 
         # The upload was running during transcription and is almost always done by
         # now; wait briefly so the token is reliably usable.
@@ -4331,23 +4341,20 @@ def stt():
         if should_retry:
             _stt_retry_tracker[retry_key] = current_retries + 1
             retry_count = current_retries + 1
-            retry_lang = result.get("language", "ur")
+            
+            # Generate intelligent, content-aware retry response based on semantic failure reason
+            val_resp = get_validation_response(semantic_res)
+            retry_prompt = val_resp["message"]
 
-            if retry_count == 1:
+            if retry_count >= 3:
+                # Force text fallback after 3 failures
                 retry_prompt = (
-                    "Maaf kijiye, aap ki awaaz saaf nahi aayi. Kya aap items ko rank karna shuru kar sakte hain? Jaise 'paani number 1'."
-                    if retry_lang in ("ur", "roman_urdu")
-                    else "Sorry, I couldn't hear that clearly. Could you please start ranking items? For example 'water number 1'."
-                )
-            else: # retry_count >= 2
-                retry_prompt = (
-                    "Aap ki awaaz clear nahi aa rahi. Agar aap type kar sakte hain, toh please chat box mein text write karke bhejein."
-                    if retry_lang in ("ur", "roman_urdu")
-                    else "I'm still having trouble hearing you clearly. If possible, please type your message in the chat box."
+                    "Mujhe maaf karein, aap ki awaaz saaf nahi aayi. Kya aap type kar sakte hain? "
+                    "Please type your ranking in the chat box."
                 )
 
             logger.warning(
-                f"⚠️ STT Low Confidence ({effective_confidence:.2f} < {stt_threshold}). "
+                f"⚠️ STT Low Confidence / Semantic Failure ({effective_confidence:.2f} < {stt_threshold}). "
                 f"Triggering retry {retry_count}/{max_retries} for {user_name} in room {room_id}"
             )
             if room_id:

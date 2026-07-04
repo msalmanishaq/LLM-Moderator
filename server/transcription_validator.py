@@ -165,3 +165,31 @@ def calculate_transcript_confidence(raw_text: str, result_dict: Dict[str, Any]) 
         return min(base_confidence, 0.45)
 
     return base_confidence
+
+
+def process_stt_output(raw_text: str, max_items: int = 12) -> Dict[str, Any]:
+    """
+    Full STT processing pipeline:
+    Phonetic Normalization -> Semantic Content Validation -> Decision Output.
+    """
+    try:
+        from roman_urdu_normalizer import get_roman_urdu_normalizer
+        norm_res = get_roman_urdu_normalizer().normalize(raw_text)
+        corrected = norm_res["normalized"]
+    except Exception as e:
+        logger.warning("Normalization in process_stt_output skipped: %s", e)
+        corrected = raw_text
+
+    from semantic_validator import validate_semantic_content
+    semantic_result = validate_semantic_content(corrected)
+
+    return {
+        "raw": raw_text,
+        "corrected": corrected,
+        "semantic_valid": semantic_result["valid"],
+        "semantic_result": semantic_result,
+        "items": semantic_result.get("items", []),
+        "rank": semantic_result.get("rank"),
+        "guidance_request": semantic_result.get("guidance_request", False),
+        "rejection_reason": semantic_result.get("rejection_reason"),
+    }
