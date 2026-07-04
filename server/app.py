@@ -4289,6 +4289,8 @@ def stt():
         if res is None and openai_client is not None:
             try:
                 logger.info("🎤 STT Fallback: Attempting OpenAI transcription...")
+                # Rewind the buffer — Groq consumed it, so the read position is at the end
+                buf.seek(0)
                 stt_kwargs = {"model": "gpt-4o-mini-transcribe", "file": buf, "prompt": stt_prompt, "language": stt_lang}
                 res = openai_client.audio.transcriptions.create(**stt_kwargs)
                 logger.info("✅ OpenAI STT fallback successful!")
@@ -4306,6 +4308,9 @@ def stt():
         # ONE structured LLM call returns {language, confidence, normalized_text}.
         _t_norm = time.time()
         result = classify_and_normalize(raw_text)
+        normalized = result.get("normalized_text", raw_text) or raw_text
+        _norm_ms = int((time.time() - _t_norm) * 1000)
+
         # Simple content check: Accept any transcript with 1+ characters (any script, any language)
         room_id = request.form.get("room_id") or request.form.get("roomId")
         user_name = request.form.get("user") or request.form.get("username") or "user"
