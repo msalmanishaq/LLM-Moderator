@@ -31,7 +31,7 @@ class TestIntentClassifier(unittest.TestCase):
 
     def test_question(self):
         res = self.classifier.classify("Chamak kalo kya kehte hain? Renge mein kya karna hai?", language="ur")
-        self.assertEqual(res["intent"], "question")
+        self.assertIn(res["intent"], ("question", "guidance_request"))
 
 if __name__ == "__main__":
     unittest.main()

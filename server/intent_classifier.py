@@ -59,7 +59,19 @@ INTENT_ANCHORS = {
         "what item should we rank next",
         "how much time is left",
         "chamak kalo kya kehte hain",
-        "can someone explain this item"
+        "can someone explain this item",
+        "guide kar dio kya karne is mein",
+        "guide kar do kya karna hai",
+        "moderator aik baar sab ko guide kar do ke ranking kaise karni hai",
+        "moderator humein guide karein yahan pe kya karna hai"
+    ],
+    "guidance_request": [
+        "guide kar dio kya karne is mein",
+        "guide kar do ke ranking kaise karni hai",
+        "moderator guide karein yahan pe kya karna hai",
+        "kaise rank karein guide kar do",
+        "is mein kya karna hai moderator",
+        "explain how to rank items"
     ]
 }
 
@@ -136,6 +148,10 @@ class IntentClassifier:
         # Refusal
         if re.search(r"\b(nahi|nahin|not|refuse)\b", lower) and re.search(r"\b(rank|ranking|list|rating)\b", lower):
             return {"intent": "ranking_refusal", "confidence": 0.85, "method": "heuristic"}
+
+        # Guidance Request
+        if re.search(r"\b(guide|kya karna|kaise rank|ranking kaise|samjha|batao)\b", lower):
+            return {"intent": "guidance_request", "confidence": 0.85, "method": "heuristic"}
 
         # Question
         if "?" in lower or re.search(r"\b(kya|kaise|kuyun|what|how|why)\b", lower):

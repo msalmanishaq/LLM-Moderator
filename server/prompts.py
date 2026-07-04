@@ -1991,8 +1991,8 @@ def generate_passive_moderator_response(
         last_msg_lower = last_user_message.lower()
         time_remaining = max(0, 15 - time_elapsed)
 
-        # Passive condition: respond only when addressed — "moderator" with or without @.
-        if not re.search(r"\bmoderator\b", last_msg_lower):
+        # Passive condition: respond when addressed ("moderator" with/without @) OR when user asks for guidance/ranking instructions.
+        if not (re.search(r"\bmoderator\b", last_msg_lower) or re.search(r"\b(guide|kya karna|kaise rank|ranking kaise|help)\b", last_msg_lower)):
             return None
 
         participant_list_str = ", ".join(actual_participants)
