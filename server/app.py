@@ -4243,24 +4243,34 @@ def stt():
                 stt_lang = "en"
         
         if not stt_lang:
-            stt_lang = "ur"  # Explicitly force 'ur' for Urdu acoustic model
+            stt_lang = "ur"
 
         logger.info(f"🎤 STT Language set to: {stt_lang!r} (room_id: {room_id})")
 
+        # CRITICAL: For Roman Urdu, do NOT pass language="ur" to Whisper.
+        # language="ur" forces Whisper to output Arabic/Urdu script (e.g. "میں سوچتا ہوں"),
+        # but our users speak Roman Urdu (Latin script, e.g. "mein sochta hun").
+        # Instead, we OMIT the language parameter and bias Whisper with a Roman Urdu
+        # prompt so it outputs Latin-script text matching how users actually type.
         if stt_lang == "ur":
             stt_prompt = (
-                "Desert survival task in Roman Urdu: paani, tarp, qutub numa, naqsha, torch, "
-                "shisha, jaket, multi-tool, lighter, namak, emergency triangle, guide book. "
+                "Yeh ek desert survival task hai Roman Urdu mein. Items: paani ki bottles, "
+                "tarp, qutub numa, naqsha, torch, shisha, jaket, multi-tool, lighter, "
+                "namak, emergency triangle, guide book. "
                 "Mera khayal hai ke paani sab se pehle 1 number par aana chahiye. "
-                "Tarp ko 2 number par rank karein. Compass ko 3 number par rank karein. "
-                "Mujhe lagta hai paani sab se zyada zaroori hai survival ke liye."
+                "Tarp ko 2 number par rank karein. Compass ko 3 par rakhein. "
+                "Mujhe lagta hai paani sab se zyada zaroori hai survival ke liye. "
+                "Haan, theek hai. Nahi, mujhe nahi lagta. Acha, chalo aage chalte hain."
             )
+            # Do NOT send language="ur" — let Whisper auto-detect and output Latin script
+            whisper_language = None
         else:
             stt_prompt = (
                 "Desert survival task in English: water bottles, tarp, compass, road map, "
                 "flashlight, mirror, jackets, multi-tool, lighter, salt packets, "
                 "emergency triangle, guide book. I think water should be rank number 1."
             )
+            whisper_language = "en"
 
         # Optional VAD & Denoise Preprocessing
         try:
@@ -4278,7 +4288,9 @@ def stt():
         if groq_client is not None:
             try:
                 logger.info("🎤 STT: Attempting Groq Whisper (whisper-large-v3)...")
-                stt_kwargs = {"model": "whisper-large-v3", "file": buf, "prompt": stt_prompt, "language": stt_lang}
+                stt_kwargs = {"model": "whisper-large-v3", "file": buf, "prompt": stt_prompt}
+                if whisper_language:
+                    stt_kwargs["language"] = whisper_language
                 res = groq_client.audio.transcriptions.create(**stt_kwargs)
                 logger.info("✅ Groq Whisper STT successful!")
             except Exception as groq_stt_err:
@@ -4291,7 +4303,9 @@ def stt():
                 logger.info("🎤 STT Fallback: Attempting OpenAI transcription...")
                 # Rewind the buffer — Groq consumed it, so the read position is at the end
                 buf.seek(0)
-                stt_kwargs = {"model": "gpt-4o-mini-transcribe", "file": buf, "prompt": stt_prompt, "language": stt_lang}
+                stt_kwargs = {"model": "gpt-4o-mini-transcribe", "file": buf, "prompt": stt_prompt}
+                if whisper_language:
+                    stt_kwargs["language"] = whisper_language
                 res = openai_client.audio.transcriptions.create(**stt_kwargs)
                 logger.info("✅ OpenAI STT fallback successful!")
             except Exception as openai_stt_err:

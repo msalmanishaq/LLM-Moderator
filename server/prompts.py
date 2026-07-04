@@ -1532,7 +1532,7 @@ def classify_and_normalize(text: str) -> Dict[str, Any]:
     # Roman Urdu, NOT passed through as English. Pure Latin + no Urdu markers = fast path.
     has_foreign_script = not is_supported(raw)
     if not has_foreign_script and not _looks_like_urdu(raw):
-        return {"language": LANG_EN, "confidence": 0.95, "normalized_text": text}
+        return {"language": LANG_EN, "confidence": 0.95, "normalized_text": raw}
 
     fallback = {"language": LANG_ROMAN_URDU, "confidence": 0.5, "normalized_text": raw}
     try:

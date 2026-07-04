@@ -165,6 +165,11 @@ class RomanUrduNormalizer:
         """
         Normalizes input text passing through Stage 1 (Rules/Dict), Stage 2 (Fuzzy), Stage 3 (LLM Fallback).
         Returns structured JSON with original text, normalized text, and audit log of changes.
+
+        NOTE: This normalizer only handles LATIN-SCRIPT Roman Urdu. If the input contains
+        non-Latin script (Urdu/Arabic, Devanagari, etc.), it is returned unchanged so that
+        downstream LLM transliteration (in classify_and_normalize) can handle the script
+        conversion properly.
         """
         t_start = time.time()
         if not text or not text.strip():
@@ -173,6 +178,21 @@ class RomanUrduNormalizer:
                 "normalized": text,
                 "changes": [],
                 "processing_time_ms": 0.0,
+            }
+
+        # Early return for non-Latin script input (Urdu/Arabic, Devanagari, etc.)
+        # Our tokenizer regex only matches Latin chars, so non-Latin text would get
+        # silently dropped/garbled. Return unchanged and let the LLM transliterator
+        # in classify_and_normalize() handle the script conversion.
+        _NON_LATIN_RE = re.compile(r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿ऀ-ॿ가-힯]")
+        if _NON_LATIN_RE.search(text):
+            logger.info("⏭️ Normalizer skipping non-Latin script input (will be handled by LLM transliterator)")
+            proc_ms = round((time.time() - t_start) * 1000, 2)
+            return {
+                "original": text,
+                "normalized": text,
+                "changes": [],
+                "processing_time_ms": proc_ms,
             }
 
         cleaned_text = self.clean_punctuation_and_whitespace(text)
