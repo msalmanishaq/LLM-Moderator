@@ -4330,15 +4330,25 @@ def stt():
 
         if should_retry:
             _stt_retry_tracker[retry_key] = current_retries + 1
+            retry_count = current_retries + 1
             retry_lang = result.get("language", "ur")
-            retry_prompt = (
-                "Maaf kijiye, aap ki awaaz saaf nahi aayi. Kya aap dobara keh sakte hain?"
-                if retry_lang in ("ur", "roman_urdu")
-                else "Sorry, I couldn't hear that clearly. Could you please repeat?"
-            )
+
+            if retry_count == 1:
+                retry_prompt = (
+                    "Maaf kijiye, aap ki awaaz saaf nahi aayi. Kya aap items ko rank karna shuru kar sakte hain? Jaise 'paani number 1'."
+                    if retry_lang in ("ur", "roman_urdu")
+                    else "Sorry, I couldn't hear that clearly. Could you please start ranking items? For example 'water number 1'."
+                )
+            else: # retry_count >= 2
+                retry_prompt = (
+                    "Aap ki awaaz clear nahi aa rahi. Agar aap type kar sakte hain, toh please chat box mein text write karke bhejein."
+                    if retry_lang in ("ur", "roman_urdu")
+                    else "I'm still having trouble hearing you clearly. If possible, please type your message in the chat box."
+                )
+
             logger.warning(
                 f"⚠️ STT Low Confidence ({effective_confidence:.2f} < {stt_threshold}). "
-                f"Triggering retry {current_retries + 1}/{max_retries} for {user_name} in room {room_id}"
+                f"Triggering retry {retry_count}/{max_retries} for {user_name} in room {room_id}"
             )
             if room_id:
                 try:

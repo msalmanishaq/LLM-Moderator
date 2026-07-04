@@ -143,11 +143,22 @@ def is_valid_transcript(text: str) -> Tuple[bool, str]:
 def calculate_transcript_confidence(raw_text: str, result_dict: Dict[str, Any]) -> float:
     """
     Computes a normalized confidence score (0.0 to 1.0) combining:
-    1. Classifier confidence score from language_guard/classify_and_normalize.
-    2. Transcription validation integrity check & semantic rank validation.
+    1. Pre-normalization of ASR phonetic variations via RomanUrduNormalizer.
+    2. Classifier confidence score from language_guard/classify_and_normalize.
+    3. Transcription validation integrity check & semantic rank validation.
     """
     base_confidence = float(result_dict.get("confidence", 0.85))
-    valid, reason = is_valid_transcript(raw_text)
+
+    # Pre-processing: Apply dictionary & stretch normalization BEFORE validity check
+    try:
+        from roman_urdu_normalizer import get_roman_urdu_normalizer
+        norm_res = get_roman_urdu_normalizer().normalize(raw_text)
+        eval_text = norm_res["normalized"]
+    except Exception as e:
+        logger.warning("Pre-normalization in confidence check skipped: %s", e)
+        eval_text = raw_text
+
+    valid, reason = is_valid_transcript(eval_text)
 
     if not valid:
         logger.info("🔍 Transcript validation flagged '%s': %r", reason, raw_text)

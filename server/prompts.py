@@ -890,7 +890,16 @@ def check_inappropriate_language(
     if not message or not message.strip():
         return False, []
 
-    message_lower = message.lower()
+    # Run RomanUrduNormalizer pre-processing to resolve ASR phonetic corruptions before scanning
+    try:
+        from roman_urdu_normalizer import get_roman_urdu_normalizer
+        norm_res = get_roman_urdu_normalizer().normalize(message)
+        message_clean = norm_res["normalized"]
+    except Exception as e:
+        logger.warning("Normalizer in check_inappropriate_language skipped: %s", e)
+        message_clean = message
+
+    message_lower = message_clean.lower()
     work = message_lower
     found: list[str] = []
 
