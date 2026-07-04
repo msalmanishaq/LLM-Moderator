@@ -4245,11 +4245,21 @@ def stt():
 
         _t_stt = time.time()
         res = None
+
+        # Domain vocabulary biasing prompt for Whisper decoder (Roman Urdu items)
+        stt_prompt = (
+            "Desert survival task in Roman Urdu: paani (water bottles), tarp (tarp sheet), "
+            "qutub numa (compass), naqsha (road map), torch (flashlight), shisha (visor mirror), "
+            "jaket (hoodies jackets), multi-tool (knife), lighter (cigarette lighter matches), "
+            "namak (salt packets), emergency triangle (reflector), guide book (desert survival book). "
+            "Ranking from 1 (sab se ahem) to 12 (sab se kam ahem)."
+        )
+
         # Task 1: Primary STT using Groq Whisper (whisper-large-v3)
         if groq_client is not None:
             try:
                 logger.info("🎤 STT: Attempting Groq Whisper (whisper-large-v3)...")
-                stt_kwargs = {"model": "whisper-large-v3", "file": buf}
+                stt_kwargs = {"model": "whisper-large-v3", "file": buf, "prompt": stt_prompt}
                 if stt_lang:
                     stt_kwargs["language"] = stt_lang
                 res = groq_client.audio.transcriptions.create(**stt_kwargs)
@@ -4262,7 +4272,7 @@ def stt():
         if res is None and openai_client is not None:
             try:
                 logger.info("🎤 STT Fallback: Attempting OpenAI transcription...")
-                stt_kwargs = {"model": "gpt-4o-mini-transcribe", "file": buf}
+                stt_kwargs = {"model": "gpt-4o-mini-transcribe", "file": buf, "prompt": stt_prompt}
                 if stt_lang:
                     stt_kwargs["language"] = stt_lang
                 res = openai_client.audio.transcriptions.create(**stt_kwargs)
@@ -4276,6 +4286,7 @@ def stt():
 
         _stt_ms = int((time.time() - _t_stt) * 1000)
         raw_text = (res.text or "").strip()
+        logger.info(f"🎤 STT Raw Model Output: {raw_text!r}")
 
         # ONE structured LLM call returns {language, confidence, normalized_text}.
         _t_norm = time.time()
