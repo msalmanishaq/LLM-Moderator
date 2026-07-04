@@ -1509,6 +1509,15 @@ def classify_and_normalize(text: str) -> Dict[str, Any]:
     raw = (text or "").strip()
     if not raw:
         return {"language": LANG_EN, "confidence": 1.0, "normalized_text": text}
+
+    # Stage 1 & 2 Normalization: Fast, deterministic Roman Urdu Normalization Layer
+    try:
+        from roman_urdu_normalizer import get_roman_urdu_normalizer
+        norm_result = get_roman_urdu_normalizer().normalize(raw)
+        raw = norm_result["normalized"]
+    except Exception as norm_err:
+        logger.warning("RomanUrduNormalizer fallback skipped: %s", norm_err)
+
     # Trigger the LLM for Urdu signals OR ANY non-Latin script. STT often transcribes
     # spoken Urdu as Hindi/Devanagari (or other scripts); those must be converted to
     # Roman Urdu, NOT passed through as English. Pure Latin + no Urdu markers = fast path.
