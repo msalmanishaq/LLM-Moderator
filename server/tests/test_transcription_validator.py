@@ -1,7 +1,7 @@
 """
 server/tests/test_transcription_validator.py
 ============================================
-Unit tests for transcription integrity validator.
+Unit tests for transcription integrity validator, fuzzy domain matching & rank validation.
 """
 
 import unittest
@@ -10,7 +10,12 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from transcription_validator import is_valid_transcript, calculate_transcript_confidence, correct_phonetic_hallucinations
+from transcription_validator import (
+    is_valid_transcript,
+    calculate_transcript_confidence,
+    resolve_item_mention,
+    validate_rank_number
+)
 
 
 class TestTranscriptionValidator(unittest.TestCase):
@@ -40,15 +45,27 @@ class TestTranscriptionValidator(unittest.TestCase):
         self.assertFalse(valid)
         self.assertEqual(reason, "excessive_word_repetition")
 
+    def test_out_of_bounds_rank_validation(self):
+        valid, reason = is_valid_transcript("number 15 pe book rakhte hain")
+        self.assertFalse(valid)
+        self.assertEqual(reason, "out_of_bounds_rank_15")
+
+        valid_flag, val = validate_rank_number("rank 14", max_items=12)
+        self.assertFalse(valid_flag)
+        self.assertEqual(val, 14)
+
+    def test_fuzzy_domain_item_resolution(self):
+        match, score = resolve_item_mention("paani", threshold=70.0)
+        self.assertIsNotNone(match)
+        self.assertIn(match, ("paani", "water", "water bottles"))
+
+        match, score = resolve_item_mention("qutub numa", threshold=70.0)
+        self.assertIsNotNone(match)
+        self.assertEqual(match, "qutub numa")
+
     def test_confidence_calculation(self):
         conf = calculate_transcript_confidence("um ah", {"confidence": 0.95})
         self.assertLess(conf, 0.70)
-
-    def test_phonetic_corrections(self):
-        self.assertEqual(correct_phonetic_hallucinations("number one piano jo hai"), "number one water jo hai")
-        self.assertEqual(correct_phonetic_hallucinations("Peerasho number do pe aana chahiye"), "parachute number do pe aana chahiye")
-        self.assertEqual(correct_phonetic_hallucinations("main doosri tatti jo hai woh lighter pe doonga"), "main doosri priority jo hai woh lighter pe doonga")
-        self.assertEqual(correct_phonetic_hallucinations("number aik pushch city"), "number aik flashlight")
 
 
 if __name__ == "__main__":
