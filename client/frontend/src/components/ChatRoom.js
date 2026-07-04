@@ -1239,7 +1239,7 @@ export default function ChatRoom() {
         // A header-only / empty capture (first-press warmup, instant taps) is a
         // few hundred bytes and reaches /stt as a "corrupt" file. Real Opus
         // speech comfortably exceeds this floor — reject anything smaller.
-        if (blob.size < 1200) {
+        if (blob.size < 200) {
           showLanguageWarningBanner("Recording too short — hold the mic and speak.");
           return;
         }
