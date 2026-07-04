@@ -4231,8 +4231,36 @@ def stt():
         buf = BytesIO(data_bytes)
         buf.name = "recording.webm"
 
+        room_id = request.form.get("room_id") or request.form.get("roomId") or request.args.get("room_id")
         lang_hint = (request.form.get("language") or "").strip().lower()
         stt_lang = {"ur": "ur", "urdu": "ur", "roman_urdu": "ur", "en": "en", "english": "en"}.get(lang_hint)
+        
+        if not stt_lang and room_id:
+            room_lang = get_room_primary_language(room_id)
+            if room_lang in ("roman_urdu", "ur", "mixed"):
+                stt_lang = "ur"
+            elif room_lang == "en":
+                stt_lang = "en"
+        
+        if not stt_lang:
+            stt_lang = "ur"  # Explicitly force 'ur' for Urdu acoustic model
+
+        logger.info(f"🎤 STT Language set to: {stt_lang!r} (room_id: {room_id})")
+
+        if stt_lang == "ur":
+            stt_prompt = (
+                "Desert survival task in Roman Urdu: paani, tarp, qutub numa, naqsha, torch, "
+                "shisha, jaket, multi-tool, lighter, namak, emergency triangle, guide book. "
+                "Mera khayal hai ke paani sab se pehle 1 number par aana chahiye. "
+                "Tarp ko 2 number par rank karein. Compass ko 3 number par rank karein. "
+                "Mujhe lagta hai paani sab se zyada zaroori hai survival ke liye."
+            )
+        else:
+            stt_prompt = (
+                "Desert survival task in English: water bottles, tarp, compass, road map, "
+                "flashlight, mirror, jackets, multi-tool, lighter, salt packets, "
+                "emergency triangle, guide book. I think water should be rank number 1."
+            )
 
         # Optional VAD & Denoise Preprocessing
         try:
@@ -4246,22 +4274,11 @@ def stt():
         _t_stt = time.time()
         res = None
 
-        # Domain vocabulary biasing prompt for Whisper decoder (Roman Urdu items)
-        stt_prompt = (
-            "Desert survival task in Roman Urdu: paani (water bottles), tarp (tarp sheet), "
-            "qutub numa (compass), naqsha (road map), torch (flashlight), shisha (visor mirror), "
-            "jaket (hoodies jackets), multi-tool (knife), lighter (cigarette lighter matches), "
-            "namak (salt packets), emergency triangle (reflector), guide book (desert survival book). "
-            "Ranking from 1 (sab se ahem) to 12 (sab se kam ahem)."
-        )
-
         # Task 1: Primary STT using Groq Whisper (whisper-large-v3)
         if groq_client is not None:
             try:
                 logger.info("🎤 STT: Attempting Groq Whisper (whisper-large-v3)...")
-                stt_kwargs = {"model": "whisper-large-v3", "file": buf, "prompt": stt_prompt}
-                if stt_lang:
-                    stt_kwargs["language"] = stt_lang
+                stt_kwargs = {"model": "whisper-large-v3", "file": buf, "prompt": stt_prompt, "language": stt_lang}
                 res = groq_client.audio.transcriptions.create(**stt_kwargs)
                 logger.info("✅ Groq Whisper STT successful!")
             except Exception as groq_stt_err:
@@ -4272,9 +4289,7 @@ def stt():
         if res is None and openai_client is not None:
             try:
                 logger.info("🎤 STT Fallback: Attempting OpenAI transcription...")
-                stt_kwargs = {"model": "gpt-4o-mini-transcribe", "file": buf, "prompt": stt_prompt}
-                if stt_lang:
-                    stt_kwargs["language"] = stt_lang
+                stt_kwargs = {"model": "gpt-4o-mini-transcribe", "file": buf, "prompt": stt_prompt, "language": stt_lang}
                 res = openai_client.audio.transcriptions.create(**stt_kwargs)
                 logger.info("✅ OpenAI STT fallback successful!")
             except Exception as openai_stt_err:

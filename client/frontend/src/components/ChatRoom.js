@@ -1161,10 +1161,10 @@ export default function ChatRoom() {
     try {
       const form = new FormData();
       form.append("file", blob, "recording.webm");
-      // Language hint (en | ur) from the room's choice → constrains transcription so it
-      // can't auto-detect into a stray language/script.
-      const sttLang = joinLanguage === "roman_urdu" ? "ur" : joinLanguage === "en" ? "en" : "";
-      if (sttLang) form.append("language", sttLang);
+      if (roomId) form.append("room_id", roomId);
+      // Language hint (en | ur) from room choice -> constrains Whisper to avoid auto-translating to English
+      const sttLang = (joinLanguage === "roman_urdu" || joinLanguage === "ur") ? "ur" : joinLanguage === "en" ? "en" : "ur";
+      form.append("language", sttLang);
       const res = await fetch(`${API_BASE}/stt`, { method: "POST", body: form, signal: controller.signal });
       if (!res.ok) throw new Error(`STT ${res.status}`);
       const data = await res.json();
