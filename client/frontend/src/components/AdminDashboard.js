@@ -324,7 +324,7 @@ export default function AdminDashboard() {
       console.log(`📥 Starting download for room ${roomId}`);
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 seconds timeout
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes — large rooms need lazy TTS generation + clip downloads + ffmpeg assembly
       
       const token = adminToken || localStorage.getItem('adminToken') || process.env.REACT_APP_ADMIN_TOKEN || '';
       
@@ -366,7 +366,7 @@ export default function AdminDashboard() {
     } catch (err) {
       if (err.name === 'AbortError') {
         console.warn('⏹️ Download was cancelled (timeout or user action)');
-        alert('❌ Recording download timed out (exceeded 2 minutes).');
+        alert('❌ Recording download timed out (exceeded 5 minutes). This room may have too many messages.');
       } else {
         console.error('❌ Recording download failed:', err);
         alert(`❌ Recording download failed: ${err.message}`);
