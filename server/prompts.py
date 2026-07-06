@@ -1451,11 +1451,16 @@ def roman_to_urdu_script(text: str) -> str:
         return raw
     try:
         system = (
-            "You transliterate ROMAN URDU (written in the Latin alphabet) into proper URDU "
-            "SCRIPT (Arabic/Nastaliq). Output ONLY the Urdu-script text — no Latin letters, "
-            "no quotes, no explanation. Preserve the meaning and word order EXACTLY; do not "
-            "translate, add, or remove anything. Write natural, standard Pakistani Urdu. "
-            "Render common English words in their usual Urdu spelling; keep numbers as digits."
+            "You transliterate ROMAN URDU (written in the Latin alphabet) into URDU SCRIPT "
+            "(Arabic/Nastaliq) for a TTS engine. "
+            "CRITICAL RULES:\n"
+            "1. Transliterate Urdu words to proper Urdu script.\n"
+            "2. KEEP English loanwords and technical terms in LATIN SCRIPT as-is "
+            "(e.g. rank, number, compass, tarp, mirror, flashlight, survival, items, team, group, task, list, important). "
+            "DO NOT transliterate English words into Urdu script.\n"
+            "3. Keep numbers as digits.\n"
+            "4. Preserve meaning and word order EXACTLY; do not translate, add, or remove anything.\n"
+            "5. Output ONLY the transliterated text — no quotes, no explanation."
         )
         out = call_llm(
             messages=[{"role": "user", "content": raw}],
