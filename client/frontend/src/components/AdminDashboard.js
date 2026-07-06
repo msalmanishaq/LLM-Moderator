@@ -274,7 +274,7 @@ export default function AdminDashboard() {
 
   const exportRoomChat = async (roomId, format) => {
     try {
-      const res = await fetchAdmin(`${API_URL}/admin/rooms/${roomId}/export/chat?format=${format}`);
+      const res = await fetchAdmin(`${API_URL}/admin/rooms/${roomId}/export/messages?format=${format}`);
       
       if (!res.ok) {
         const error = await res.json();
