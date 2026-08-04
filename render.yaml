@@ -17,7 +17,13 @@ services:
         sync: false
       - key: OPENAI_API_KEY  # optional
         sync: false
-      - key: ADMIN_TOKEN  # required: gates all /admin/* routes via the X-Admin-Token header
+      - key: ADMIN_TOKEN  # legacy raw token for curl/export scripts (X-Admin-Token header)
+        sync: false
+      - key: ADMIN_USERNAME  # admin panel login (see server/admin_auth.py)
+        sync: false
+      - key: ADMIN_PASSWORD_HASH  # generate with: python admin_auth.py hash
+        sync: false
+      - key: ADMIN_SESSION_SECRET  # optional; derived from the password hash if unset
         sync: false
       - key: FRONTEND_URL
         value: https://llm-moderator-main-do.vercel.app/

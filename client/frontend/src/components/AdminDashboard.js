@@ -35,9 +35,34 @@ import {
 const API_URL = process.env.REACT_APP_API_URL || 'https://llm-moderator-main.onrender.com';
 const FRONTEND_URL = window.location.origin;
 
-// Admin token (prefilled from env if provided; can also be typed into the header field).
-// Sent as the X-Admin-Token header on every /admin/* request.
+// Admin session. The panel is gated by a username/password login (POST /admin/login),
+// which returns a signed, time-limited token. That token is sent as X-Admin-Token on
+// every /admin/* request. NOTE: never reintroduce REACT_APP_ADMIN_TOKEN here — CRA
+// inlines REACT_APP_* into the public bundle, which would hand the admin credential
+// to anyone who opens the site.
 const ADMIN_FETCH_TIMEOUT_MS = 20000;
+const SESSION_KEY = 'adminSession';
+
+const loadStoredSession = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+    if (!stored?.token || !stored?.expiresAt) return null;
+    if (stored.expiresAt * 1000 <= Date.now()) {
+      localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    return stored;
+  } catch (_) {
+    return null;
+  }
+};
+
+const storeSession = (session) => {
+  try {
+    if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    else localStorage.removeItem(SESSION_KEY);
+  } catch (_) { /* private browsing / quota — session just won't persist */ }
+};
 
 const adminFetch = (url, token, options = {}, timeoutMs = ADMIN_FETCH_TIMEOUT_MS) => {
   const controller = new AbortController();
@@ -49,12 +74,137 @@ const adminFetch = (url, token, options = {}, timeoutMs = ADMIN_FETCH_TIMEOUT_MS
   }).finally(() => clearTimeout(timer));
 };
 
+// =========================
+// Login screen — shown until a valid session exists
+// =========================
+function AdminLogin({ onSuccess }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), ADMIN_FETCH_TIMEOUT_MS);
+      const res = await fetch(`${API_URL}/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timer));
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (res.status === 429 && data.retry_after_seconds) {
+          const mins = Math.ceil(data.retry_after_seconds / 60);
+          setError(`${data.error} Locked for about ${mins} minute${mins === 1 ? '' : 's'}.`);
+        } else {
+          setError(data.error || `Login failed (HTTP ${res.status}).`);
+        }
+        setPassword('');
+        return;
+      }
+
+      onSuccess({
+        token: data.token,
+        username: data.username,
+        expiresAt: data.expires_at,
+      });
+    } catch (err) {
+      setError(
+        err.name === 'AbortError'
+          ? `The server did not respond within ${ADMIN_FETCH_TIMEOUT_MS / 1000}s. It may be asleep (Render free tier) — wait a moment and try again.`
+          : `Could not reach the server at ${API_URL}: ${err.message}`
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-body flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-500 to-violet-650 flex items-center justify-center shadow-lg shadow-indigo-100">
+            <MdSecurity className="text-2xl text-white" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-800 tracking-tight mt-4">Moderator Control Panel</h1>
+          <p className="text-xs text-slate-400 font-semibold tracking-wide uppercase mt-1">Administrator sign in</p>
+        </div>
+
+        <form
+          onSubmit={submit}
+          className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-4"
+        >
+          <div>
+            <label htmlFor="admin-username" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+              Username
+            </label>
+            <input
+              id="admin-username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              autoFocus
+              required
+              disabled={busy}
+              className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-slate-50"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="admin-password" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+              Password
+            </label>
+            <input
+              id="admin-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+              disabled={busy}
+              className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-slate-50"
+            />
+          </div>
+
+          {error && (
+            <div className="bg-rose-50 border border-rose-200 rounded-lg px-3.5 py-2.5 text-xs text-rose-700 leading-relaxed">
+              ⚠️ {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={busy || !username.trim() || !password}
+            className="btn-primary w-full py-2.5 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {busy ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
+
+        <p className="text-[11px] text-slate-400 text-center mt-5 leading-relaxed">
+          Credentials are set on the server via <span className="font-mono">ADMIN_USERNAME</span> and{' '}
+          <span className="font-mono">ADMIN_PASSWORD_HASH</span>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate(); // ✅ ADD THIS LINE
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [adminToken, setAdminTokenState] = useState(
-    () => process.env.REACT_APP_ADMIN_TOKEN || ''
-  );
+  const [session, setSession] = useState(loadStoredSession);
+  // Every existing call site reads `adminToken`; it now comes from the login session.
+  const adminToken = session?.token || '';
   const [rooms, setRooms] = useState([]);
   const [stats, setStats] = useState(null);
   const [settings, setSettings] = useState([]);
@@ -63,6 +213,7 @@ export default function AdminDashboard() {
   const [exportingRecordingId, setExportingRecordingId] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('idle'); // idle | loading | ok | error
   const [authError, setAuthError] = useState(null); // visible reason loads fail (e.g. 401)
+  const [loginNotice, setLoginNotice] = useState(null); // shown on the login screen after sign-out/expiry
   const [adminLogs, setAdminLogs] = useState([]);
   const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -73,28 +224,81 @@ export default function AdminDashboard() {
     admin_note: ''
   });
 
+  // Load data once a session exists (on mount if one was restored, or right after login).
   useEffect(() => {
-    loadDashboardData();
-    loadSettings();
-    loadAdminLogs();
-    
+    if (!adminToken) return;
+    loadDashboardData(adminToken);
+    loadSettings(adminToken);
+    loadAdminLogs(adminToken);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminToken]);
+
+  // Expire the session in-place so a long-idle tab returns to the login screen
+  // instead of firing doomed 401s.
+  useEffect(() => {
+    if (!session?.expiresAt) return;
+    const msLeft = session.expiresAt * 1000 - Date.now();
+    if (msLeft <= 0) {
+      signOut('Your session expired. Please sign in again.');
+      return;
+    }
+    const timer = setTimeout(
+      () => signOut('Your session expired. Please sign in again.'),
+      msLeft
+    );
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  useEffect(() => {
     // Event listeners for Quick Actions
     const handleTabChange = (e) => {
       setActiveTab(e.detail.tab);
     };
-    
+
     const handleOpenCreateRoom = () => {
       setShowCreateRoomModal(true);
     };
-    
+
     window.addEventListener('admin:changeTab', handleTabChange);
     window.addEventListener('admin:openCreateRoom', handleOpenCreateRoom);
-    
+
     return () => {
       window.removeEventListener('admin:changeTab', handleTabChange);
       window.removeEventListener('admin:openCreateRoom', handleOpenCreateRoom);
     };
   }, []);
+
+  const signIn = (newSession) => {
+    storeSession(newSession);
+    setSession(newSession);
+    setAuthError(null);
+    setLoginNotice(null);
+  };
+
+  const signOut = (notice = null) => {
+    const token = session?.token;
+    // Best-effort audit entry; the token is stateless so logout is a local discard.
+    if (token) {
+      adminFetch(`${API_URL}/admin/logout`, token, { method: 'POST' }).catch(() => {});
+    }
+    storeSession(null);
+    setSession(null);
+    setRooms([]);
+    setStats(null);
+    setSettings([]);
+    setAdminLogs([]);
+    setSelectedRoom(null);
+    setActiveTab('dashboard');
+    setConnectionStatus('idle');
+    setAuthError(null);
+    setLoginNotice(notice);
+  };
+
+  // A 401 mid-session means the token was revoked (password/secret changed) or expired.
+  const handleUnauthorized = () => {
+    signOut('Your session is no longer valid. Please sign in again.');
+  };
 
   const formatFetchError = (err) => {
     if (err?.name === 'AbortError') {
@@ -118,11 +322,8 @@ export default function AdminDashboard() {
 
       // Surface auth/HTTP failures instead of silently treating a 401 body as data.
       if (roomsRes.status === 401 || statsRes.status === 401) {
-        setAuthError(
-          'Unauthorized (401): admin token missing or wrong. ' +
-          'Enter the same value as server ADMIN_TOKEN in the header field (or set REACT_APP_ADMIN_TOKEN and restart the frontend).'
-        );
         setConnectionStatus('error');
+        handleUnauthorized();
         return;
       }
       if (!roomsRes.ok || !statsRes.ok) {
@@ -150,7 +351,7 @@ export default function AdminDashboard() {
   const loadSettings = async (token = adminToken) => {
     try {
       const res = await adminFetch(`${API_URL}/admin/settings`, token);
-      if (res.status === 401) return;
+      if (res.status === 401) { handleUnauthorized(); return; }
       const data = await res.json();
       setSettings(data.settings || []);
     } catch (err) {
@@ -161,7 +362,7 @@ export default function AdminDashboard() {
   const loadAdminLogs = async (token = adminToken) => {
     try {
       const res = await adminFetch(`${API_URL}/admin/logs`, token);
-      if (res.status === 401) return;
+      if (res.status === 401) { handleUnauthorized(); return; }
       const data = await res.json();
       setAdminLogs(data.logs || []);
     } catch (err) {
@@ -326,11 +527,9 @@ export default function AdminDashboard() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes — large rooms need lazy TTS generation + clip downloads + ffmpeg assembly
       
-      const token = adminToken || localStorage.getItem('adminToken') || process.env.REACT_APP_ADMIN_TOKEN || '';
-      
       const response = await fetch(`${API_URL}/api/room/${roomId}/recording?format=mp3`, {
         headers: {
-          'X-Admin-Token': token
+          'X-Admin-Token': adminToken
         },
         signal: controller.signal
       });
@@ -461,6 +660,20 @@ export default function AdminDashboard() {
     }
   };
 
+  // Gate: no valid session → the panel is never rendered and no admin request fires.
+  if (!session) {
+    return (
+      <>
+        {loginNotice && (
+          <div className="fixed top-0 inset-x-0 z-50 bg-amber-50 border-b border-amber-200 px-6 py-3 text-sm text-amber-800 text-center">
+            {loginNotice}
+          </div>
+        )}
+        <AdminLogin onSuccess={signIn} />
+      </>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 font-body">
       {/* Modern Header */}
@@ -486,18 +699,6 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <input
-                type="password"
-                value={adminToken}
-                onChange={(e) => setAdminTokenState(e.target.value)}
-                onBlur={() => reloadAll(adminToken)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') reloadAll(adminToken);
-                }}
-                placeholder="Admin token"
-                title="X-Admin-Token sent with every admin request (must match server ADMIN_TOKEN)"
-                className="hidden md:block w-40 px-3 py-2 text-xs font-mono border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              />
               <div className="hidden md:flex items-center gap-5">
                 <div className="text-right">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Backend</p>
@@ -530,7 +731,7 @@ export default function AdminDashboard() {
                     {API_URL.replace(/^https?:\/\//, '')}
                   </p>
                 </div>
-                <button 
+                <button
                   onClick={() => reloadAll()}
                   disabled={loading}
                   className="btn-primary py-2.5 px-4 flex items-center gap-2 shadow-sm text-xs font-bold"
@@ -538,6 +739,22 @@ export default function AdminDashboard() {
                   <MdRefresh className={`text-base ${loading ? 'animate-spin' : ''}`} />
                   <span>{loading ? 'Refreshing...' : 'Refresh Engine'}</span>
                 </button>
+                <div className="flex items-center gap-2.5 pl-4 border-l border-slate-200">
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Signed in</p>
+                    <p className="text-xs font-bold text-slate-700 truncate max-w-[120px]" title={session?.username}>
+                      {session?.username}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => signOut()}
+                    title="Sign out of the admin panel"
+                    className="p-2 rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                    aria-label="Sign out"
+                  >
+                    <MdExitToApp className="text-lg" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>

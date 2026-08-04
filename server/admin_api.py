@@ -5,6 +5,7 @@ Backend API for admin panel - Fixed room creation with max_participants
 """
 
 import os
+import time
 import logging
 import csv
 import json
@@ -44,20 +45,122 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
 
 # ============================================================
-# Auth: every /admin/* blueprint route requires X-Admin-Token == ADMIN_TOKEN
-# (fail closed if ADMIN_TOKEN is unset). App-level /admin routes use a matching
-# decorator in app.py (require_admin_token).
+# Auth: every /admin/* blueprint route requires an X-Admin-Token that is either a
+# signed session token from POST /admin/login (username + password) or the legacy
+# raw ADMIN_TOKEN (kept working for curl/export scripts). Fails closed when neither
+# credential is configured. App-level /admin routes use a matching decorator in
+# app.py (require_admin_token). See admin_auth.py.
 # ============================================================
+import admin_auth
+
+# Endpoints reachable without a token — the login route itself, or nobody could
+# ever obtain one.
+_AUTH_EXEMPT_ENDPOINTS = {"admin.admin_login", "admin.admin_auth_info"}
+
+
 @admin_bp.before_request
 def _require_admin_token():
     if request.method == "OPTIONS":  # allow CORS preflight without a token
         return None
-    expected = os.getenv("ADMIN_TOKEN")
-    provided = request.headers.get("X-Admin-Token")
-    if not expected or provided != expected:
-        logger.warning("🔒 Rejected admin request to %s (bad/missing X-Admin-Token)", request.path)
+    if request.endpoint in _AUTH_EXEMPT_ENDPOINTS:
+        return None
+    authorized, principal = admin_auth.authorize_request(request.headers)
+    if not authorized:
+        logger.warning("🔒 Rejected admin request to %s (bad/missing credentials)", request.path)
         return jsonify({"error": "Unauthorized"}), 401
+    request.admin_principal = principal
     return None
+
+
+# ============================================================
+# Login / session
+# ============================================================
+@admin_bp.route('/login', methods=['POST'])
+def admin_login():
+    """Exchange username + password for a time-limited signed session token."""
+    ip = admin_auth._client_ip(request.headers, request.remote_addr)
+
+    locked_for = admin_auth.login_lockout_remaining(ip)
+    if locked_for:
+        logger.warning("🔒 Admin login refused for %s — locked out %ds more", ip, locked_for)
+        return jsonify({
+            "error": "Too many failed attempts. Try again later.",
+            "retry_after_seconds": locked_for,
+        }), 429
+
+    if not admin_auth.login_enabled():
+        logger.error("🔒 Admin login attempted but no password is configured on the server")
+        return jsonify({
+            "error": "Admin login is not configured on the server. "
+                     "Set ADMIN_USERNAME and ADMIN_PASSWORD_HASH."
+        }), 503
+
+    data = request.get_json(silent=True) or {}
+    username = str(data.get("username") or "").strip()
+    password = str(data.get("password") or "")
+
+    if not admin_auth.verify_credentials(username, password):
+        lockout = admin_auth.record_login_failure(ip)
+        logger.warning("🔒 Failed admin login for %r from %s", username[:40], ip)
+        body = {"error": "Invalid username or password."}
+        if lockout:
+            body["error"] = "Too many failed attempts. Try again later."
+            body["retry_after_seconds"] = lockout
+            return jsonify(body), 429
+        return jsonify(body), 401
+
+    admin_auth.clear_login_failures(ip)
+    token, expires_at = admin_auth.issue_session_token(username)
+    logger.info("✅ Admin login succeeded for %r from %s", username, ip)
+    try:
+        log_admin_action(
+            action="admin_login", entity_type="session", entity_id=username,
+            admin_user=username, ip_address=ip,
+        )
+    except Exception as e:
+        logger.debug("admin_login audit entry skipped: %s", e)
+
+    return jsonify({
+        "token": token,
+        "username": username,
+        "expires_at": expires_at,
+        "expires_in_seconds": expires_at - int(time.time()),
+    })
+
+
+@admin_bp.route('/session', methods=['GET'])
+def admin_session():
+    """Validate the caller's token (used by the dashboard to restore a session)."""
+    return jsonify({
+        "valid": True,
+        "principal": getattr(request, "admin_principal", None),
+        **admin_auth.auth_status(),
+    })
+
+
+@admin_bp.route('/auth-info', methods=['GET'])
+def admin_auth_info():
+    """Unauthenticated: tells the login screen how auth is configured (no secrets)."""
+    return jsonify(admin_auth.auth_status())
+
+
+@admin_bp.route('/logout', methods=['POST'])
+def admin_logout():
+    """Session tokens are stateless, so logout is a client-side discard.
+
+    Acknowledged here so the dashboard has one place to call, and so the sign-out
+    lands in the admin audit log.
+    """
+    principal = getattr(request, "admin_principal", None)
+    try:
+        log_admin_action(
+            action="admin_logout", entity_type="session", entity_id=principal,
+            admin_user=principal or "admin",
+            ip_address=admin_auth._client_ip(request.headers, request.remote_addr),
+        )
+    except Exception as e:
+        logger.debug("admin_logout audit entry skipped: %s", e)
+    return jsonify({"ok": True})
 
 # ============================================================
 # Helper: Safe datetime parsing

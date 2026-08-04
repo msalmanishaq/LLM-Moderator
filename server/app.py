@@ -1075,19 +1075,24 @@ logger.info(
 logger.info(f"📝 Frontend URL: {FRONTEND_URL}")
 
 # ============================================================
-# Admin auth — require X-Admin-Token == ADMIN_TOKEN (fail closed if unset)
+# Admin auth — X-Admin-Token must be a signed session token from POST /admin/login
+# (username + password) or the legacy raw ADMIN_TOKEN. Fails closed if neither
+# credential is configured. Shared implementation lives in admin_auth.py.
 # ============================================================
+import admin_auth
+
+
 def require_admin_token(f):
     """Guard app-level /admin routes. Blueprint routes use admin_bp.before_request."""
     @wraps(f)
     def _wrapped(*args, **kwargs):
         if request.method == "OPTIONS":  # let CORS preflight through
             return ("", 204)
-        expected = os.getenv("ADMIN_TOKEN")
-        provided = request.headers.get("X-Admin-Token")
-        if not expected or provided != expected:
-            logger.warning("🔒 Rejected admin request to %s (bad/missing X-Admin-Token)", request.path)
+        authorized, principal = admin_auth.authorize_request(request.headers)
+        if not authorized:
+            logger.warning("🔒 Rejected admin request to %s (bad/missing credentials)", request.path)
             return jsonify({"error": "Unauthorized"}), 401
+        request.admin_principal = principal
         return f(*args, **kwargs)
     return _wrapped
 
